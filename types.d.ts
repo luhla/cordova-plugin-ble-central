@@ -14,6 +14,8 @@ declare namespace BLECentralPlugin {
         id: string;
         rssi: number;
         advertising: ArrayBuffer | any;
+        /* Android only */
+        connectable?: boolean;
         state: PeripheralState;
     }
 
@@ -43,8 +45,12 @@ declare namespace BLECentralPlugin {
         legacy?: boolean;
         /* Android only */
         reportDelay?: number;
+        /* Android only */
+        forceScanFilter?: number;
 
         reportDuplicates?: boolean;
+        /** Scanning duration in seconds */
+        duration?: number;
     }
 
     interface L2CAPOptions {

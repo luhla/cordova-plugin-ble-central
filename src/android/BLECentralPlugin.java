@@ -64,8 +64,6 @@ public class BLECentralPlugin extends CordovaPlugin {
     private static final String BLUETOOTH_SCAN =  "android.permission.BLUETOOTH_SCAN" ; // API 31
 
     // actions
-    private static final String SCAN = "scan";
-    private static final String START_SCAN = "startScan";
     private static final String STOP_SCAN = "stopScan";
     private static final String START_SCAN_WITH_OPTIONS = "startScanWithOptions";
     private static final String BONDED_DEVICES = "bondedDevices";
@@ -129,6 +127,7 @@ public class BLECentralPlugin extends CordovaPlugin {
 
     // scan options
     boolean reportDuplicates = false;
+    boolean forceScanFilter = false;
 
     private static final int REQUEST_BLUETOOTH_SCAN = 2;
     private static final int REQUEST_BLUETOOTH_CONNECT = 3;
@@ -146,6 +145,7 @@ public class BLECentralPlugin extends CordovaPlugin {
     private int scanSeconds;
     private ScanSettings scanSettings;
     private final Handler stopScanHandler = new Handler(Looper.getMainLooper());
+    private final Runnable stopScanRunnable = this::stopScan;
 
     // Bluetooth state notification
     CallbackContext stateCallback;
@@ -210,21 +210,7 @@ public class BLECentralPlugin extends CordovaPlugin {
         }
 
         boolean validAction = true;
-
-        if (action.equals(SCAN)) {
-
-            UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-            int scanSeconds = args.getInt(1);
-            resetScanOptions();
-            findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
-
-        } else if (action.equals(START_SCAN)) {
-
-            UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-            resetScanOptions();
-            findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
-
-        } else if (action.equals(STOP_SCAN)) {
+        if (action.equals(STOP_SCAN)) {
             stopScan();
             callbackContext.success();
 
@@ -425,6 +411,7 @@ public class BLECentralPlugin extends CordovaPlugin {
 
             resetScanOptions();
             this.reportDuplicates = options.optBoolean("reportDuplicates", false);
+            this.forceScanFilter = options.optBoolean("forceScanFilter", false);
             ScanSettings.Builder scanSettings = new ScanSettings.Builder();
 
             switch (options.optString("scanMode", "")) {
@@ -526,7 +513,8 @@ public class BLECentralPlugin extends CordovaPlugin {
                 if (reportDelay >= 0L)
                     scanSettings.setReportDelay( reportDelay );
 
-                findLowEnergyDevices(callbackContext, serviceUUIDs, -1, scanSettings.build() );
+                int scanDuration = options.optInt("duration", -1);
+                findLowEnergyDevices(callbackContext, serviceUUIDs, scanDuration, scanSettings.build() );
             }
 
         } else if (action.equals(BONDED_DEVICES)) {
@@ -629,13 +617,13 @@ public class BLECentralPlugin extends CordovaPlugin {
             final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
             sendBluetoothStateChange(state);
             if (state == BluetoothAdapter.STATE_OFF) {
-               // #894 When Bluetooth is physically turned off the whole process might die, so the normal
+                // #894 When Bluetooth is physically turned off the whole process might die, so the normal
                 // onConnectionStateChange callbacks won't be invoked
-                
+
                 BluetoothManager bluetoothManager = (BluetoothManager) cordova.getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
                 for(Peripheral peripheral : peripherals.values()) {
                     if (!peripheral.isConnected()) continue;
-                    
+
                     int connectedState = bluetoothManager.getConnectionState(peripheral.getDevice(), BluetoothProfile.GATT);
                     if (connectedState == BluetoothProfile.STATE_DISCONNECTED) {
                         peripheral.peripheralDisconnected("Bluetooth Disabled");
@@ -1151,8 +1139,12 @@ public class BLECentralPlugin extends CordovaPlugin {
             boolean alreadyReported = peripherals.containsKey(address) && !peripherals.get(address).isUnscanned();
 
             if (!alreadyReported) {
+                Boolean isConnectable = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    isConnectable = result.isConnectable(); 
+                }
 
-                Peripheral peripheral = new Peripheral(device, result.getRssi(), result.getScanRecord().getBytes());
+                Peripheral peripheral = new Peripheral(device, result.getRssi(), result.getScanRecord().getBytes(), isConnectable);
                 peripherals.put(device.getAddress(), peripheral);
 
                 if (discoverCallback != null) {
@@ -1164,7 +1156,11 @@ public class BLECentralPlugin extends CordovaPlugin {
             } else {
                 Peripheral peripheral = peripherals.get(address);
                 if (peripheral != null) {
-                    peripheral.update(result.getRssi(), result.getScanRecord().getBytes());
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        peripheral.update(result.getRssi(), result.getScanRecord().getBytes(),result.isConnectable());
+                    }else{
+                        peripheral.update(result.getRssi(), result.getScanRecord().getBytes());
+                    }
                     if (reportDuplicates && discoverCallback != null) {
                         PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
                         pluginResult.setKeepCallback(true);
@@ -1185,10 +1181,6 @@ public class BLECentralPlugin extends CordovaPlugin {
         }
     };
 
-
-    private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds) {
-        findLowEnergyDevices( callbackContext, serviceUUIDs, scanSeconds, new ScanSettings.Builder().build() );
-    }
 
     private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds, ScanSettings scanSettings) {
 
@@ -1272,12 +1264,16 @@ public class BLECentralPlugin extends CordovaPlugin {
                         new ParcelUuid(uuid)).build();
                 filters.add(filter);
             }
+        } else if (this.forceScanFilter) {
+            ScanFilter filter = new ScanFilter.Builder().build();
+            filters.add(filter);
         }
-        stopScanHandler.removeCallbacks(this::stopScan);
+
+        stopScanHandler.removeCallbacks(stopScanRunnable);
         bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
 
         if (scanSeconds > 0) {
-            stopScanHandler.postDelayed(this::stopScan, scanSeconds * 1000);
+            stopScanHandler.postDelayed(stopScanRunnable, scanSeconds * 1000);
         }
 
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -1286,12 +1282,12 @@ public class BLECentralPlugin extends CordovaPlugin {
     }
 
     private void stopScan() {
-        stopScanHandler.removeCallbacks(this::stopScan);
+        stopScanHandler.removeCallbacks(stopScanRunnable);
         if (bluetoothAdapter.getState() == BluetoothAdapter.STATE_ON) {
             LOG.d(TAG, "Stopping Scan");
             try {
                 final BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-                if (bluetoothLeScanner != null) 
+                if (bluetoothLeScanner != null)
                     bluetoothLeScanner.stopScan(leScanCallback);
             } catch (Exception e) {
                 LOG.e(TAG, "Exception stopping scan", e);
@@ -1468,6 +1464,7 @@ public class BLECentralPlugin extends CordovaPlugin {
      */
     private void resetScanOptions() {
         this.reportDuplicates = false;
+        this.forceScanFilter = false;
     }
 
     private void addBondStateListener() {
@@ -1479,7 +1476,7 @@ public class BLECentralPlugin extends CordovaPlugin {
                     if (ACTION_BOND_STATE_CHANGED.equals(action)) {
                         BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                         Peripheral peripheral = peripherals.get(device.getAddress());
-                        
+
                         if (peripheral != null) {
                             int bondState = intent.getIntExtra(EXTRA_BOND_STATE, BluetoothDevice.ERROR);
                             int previousBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1);
