@@ -18,6 +18,7 @@
 
 #import "BLECentralPlugin.h"
 #import <Cordova/CDV.h>
+#import <notify.h>
 
 @interface BLECentralPlugin() {
     NSDictionary *bluetoothStates;
@@ -71,6 +72,18 @@
                        @"on", @(CBCentralManagerStatePoweredOn),
                        nil];
     readRSSICallbacks = [NSMutableDictionary new];
+    
+    /*
+     Hladik 20230405:
+     returns callback only if screen is on
+     */
+    NSString *evt  = @"Y29tLmFwcGxlLnNwcmluZ2JvYXJkLmhhc0JsYW5rZWRTY3JlZW4=";
+    NSData *evtDecoded = [[NSData alloc] initWithBase64EncodedString:evt options:0];
+    NSString *evtString =[[NSString alloc] initWithData:evtDecoded encoding:NSUTF8StringEncoding];
+
+
+    nToken = 0;
+    notify_register_check((char*)[evtString UTF8String], &nToken);
 }
 
 #pragma mark - Cordova Plugin Methods
@@ -613,7 +626,12 @@
     [peripherals addObject:peripheral];
     [peripheral setAdvertisementData:advertisementData RSSI:RSSI];
 
-    if (discoverPeripheralCallbackId) {
+    uint64_t nstate;
+    int result = notify_get_state(nToken, &nstate);
+    NSLog(@"BT Scr state [ %llu - %x - %d - %x ] ",  nstate, (nstate==0),  nToken ,(result == NOTIFY_STATUS_OK) );
+        
+    if (discoverPeripheralCallbackId && nstate==0 ) {
+        
         CDVPluginResult *pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
         NSLog(@"Discovered %@", [peripheral asDictionary]);
