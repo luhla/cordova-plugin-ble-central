@@ -160,8 +160,13 @@ declare namespace BLECentralPlugin {
         ): Promise<void>;
         stopNotification(device_id: string, service_uuid: string, characteristic_uuid: string): Promise<void>;
 
-        /* Returns a rejected promise if the device is not connected */
+        /* Returns a resolved promise if the device is connected,
+            otherwise returns rejected promise if the device is not connected */
         isConnected(device_id: string): Promise<void>;
+
+        /* Returns a promise that resolves to true if the device is connected,
+            otherwise resolves to false if the device is not connected or an error occurs */
+        isConnected(device_id: string, rejectWhenDisconnected: false): Promise<boolean>;
 
         /* Returns a rejected promise if bluetooth is not connected */
         isEnabled(): Promise<void>;
@@ -183,6 +188,10 @@ declare namespace BLECentralPlugin {
         stopLocationStateNotifications(): Promise<void>;
 
         readRSSI(device_id: string): Promise<number>;
+
+        /* May be used to request (on Android) a larger MTU size to be able to send more data at once
+           [iOS] requestMtu is not supported on iOS. */
+        requestMtu(device_id: string, mtu: number): Promise<number>;
 
         /* When Connecting to a peripheral android can request for the connection priority for faster communication.
            [iOS] requestConnectionPriority is not supported on iOS. */
@@ -297,7 +306,7 @@ declare namespace BLECentralPlugin {
 
         /* May be used to request (on Android) a larger MTU size to be able to send more data at once
            [iOS] requestMtu is not supported on iOS. */
-        requestMtu(device_id: string, mtu: number, success?: () => any, failure?: () => any): void;
+        requestMtu(device_id: string, mtu: number, success?: (mtu: number) => any, failure?: () => any): void;
 
         /* When Connecting to a peripheral android can request for the connection priority for faster communication.
            [iOS] requestConnectionPriority is not supported on iOS. */
