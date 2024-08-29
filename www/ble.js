@@ -362,9 +362,17 @@ module.exports.withPromises = {
         });
     },
 
-    isConnected: function (device_id) {
+    isConnected: function (device_id, rejectWhenDisconnected) {
         return new Promise(function (resolve, reject) {
-            module.exports.isConnected(device_id, resolve, reject);
+            if (rejectWhenDisconnected === false) {
+                module.exports.isConnected(
+                    device_id,
+                    () => resolve(true),
+                    () => resolve(false)
+                );
+            } else {
+                module.exports.isConnected(device_id, resolve, reject);
+            }
         });
     },
 
@@ -431,6 +439,12 @@ module.exports.withPromises = {
     readRSSI: function (device_id) {
         return new Promise(function (resolve, reject) {
             module.exports.readRSSI(device_id, resolve, reject);
+        });
+    },
+
+    requestMtu: function (device_id, mtu) {
+        return new Promise(function (resolve, reject) {
+            module.exports.requestMtu(device_id, mtu, resolve, reject);
         });
     },
 

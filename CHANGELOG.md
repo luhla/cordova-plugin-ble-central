@@ -1,3 +1,20 @@
+## 1.7.5
+
+- iOS: Improve input validation of UUIDs on iOS to avoid crashes (#1014, #905)
+- iOS: Address iOS deprecation warnings & general warnings (#919)
+- iOS: Harden up iOS service discovery (#741)
+- Android: Tidy up some warnings
+- Android: Mark broadcast receivers as exported for Android v34 (#1020)
+
+## 1.7.4
+
+- More cleanly support isConnected usage with a bool return value #1018 with review from @MaximBelov
+
+## 1.7.3
+
+- Android: Expose Promise version of `requestMtu` for async/await
+- Types: Added returned mtu to `requestMtu` success callback thanks #1012 @ksievers-irco
+
 ## 1.7.2
 
 - Android: add isConnectable Property for API26+ (O) #823 (#993) thanks @Gargamil
