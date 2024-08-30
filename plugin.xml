@@ -83,6 +83,8 @@
         <source-file src="src/android/Helper.java" target-dir="src/com/megster/cordova/ble/central"/>
         <source-file src="src/android/UUIDHelper.java" target-dir="src/com/megster/cordova/ble/central"/>
         <source-file src="src/android/L2CAPContext.java" target-dir="src/com/megster/cordova/ble/central"/>
+        <source-file src="src/android/AktionBroadcastReceiver.java" target-dir="src/com/megster/cordova/ble/central"/>
+        
         <framework src="androidx.annotation:annotation:*"/>
     </platform>
 

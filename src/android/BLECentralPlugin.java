@@ -17,6 +17,7 @@ package com.megster.cordova.ble.central;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -65,6 +66,8 @@ public class BLECentralPlugin extends CordovaPlugin {
     private static final String BLUETOOTH_SCAN =  "android.permission.BLUETOOTH_SCAN" ; // API 31
 
     // actions
+    private static final String SCAN = "scan";
+    private static final String START_SCAN = "startScan";
     private static final String STOP_SCAN = "stopScan";
     private static final String START_SCAN_WITH_OPTIONS = "startScanWithOptions";
     private static final String BONDED_DEVICES = "bondedDevices";
@@ -128,6 +131,7 @@ public class BLECentralPlugin extends CordovaPlugin {
 
     // scan options
     boolean reportDuplicates = false;
+    boolean backgroundScanMode = false;
     boolean forceScanFilter = false;
 
     private static final int REQUEST_BLUETOOTH_SCAN = 2;
@@ -414,6 +418,7 @@ public class BLECentralPlugin extends CordovaPlugin {
 
             resetScanOptions();
             this.reportDuplicates = options.optBoolean("reportDuplicates", false);
+            this.backgroundScanMode = options.optBoolean("backgroundScanMode", false);
             this.forceScanFilter = options.optBoolean("forceScanFilter", false);
             ScanSettings.Builder scanSettings = new ScanSettings.Builder();
 
@@ -522,6 +527,11 @@ public class BLECentralPlugin extends CordovaPlugin {
                 long reportDelay = options.optLong("reportDelay", -1 );
                 if (reportDelay >= 0L)
                     scanSettings.setReportDelay( reportDelay );
+                    
+                if (backgroundScanMode) {
+                    scanSettings.setScanMode( ScanSettings.SCAN_MODE_LOW_POWER );
+                    scanSettings.setLegacy( false );
+                }
 
                 int scanDuration = options.optInt("duration", -1);
                 findLowEnergyDevices(callbackContext, serviceUUIDs, scanDuration, scanSettings.build() );
@@ -1294,7 +1304,19 @@ public class BLECentralPlugin extends CordovaPlugin {
         }
 
         stopScanHandler.removeCallbacks(stopScanRunnable);
-        bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
+        
+        if ( backgroundScanMode ) {
+            LOG.d(TAG, "Starting Scan in background mode");
+            
+            Intent intent = new Intent( cordova.getContext() , AktionBroadcastReceiver.class);
+            intent.putExtra("o-scan", true);
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(cordova.getContext(), 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+            bluetoothLeScanner.startScan(filters, scanSettings, pendingIntent);
+
+        } else {
+            LOG.d(TAG, "Starting Scan");
+            bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
+        }
 
         if (scanSeconds > 0) {
             stopScanHandler.postDelayed(stopScanRunnable, scanSeconds * 1000);
