@@ -1,3 +1,29 @@
+## 2.0.0
+
+**NO BREAKING API CHANGES from v1**
+
+- Bump minimum cordova-android version to 12 (require compile SDK of 33+)
+- Bump minimum capacitor version to 5
+- Support Android v33 Bluetooth callbacks (#985)
+
+## 1.7.9
+
+- iOS: Convert peripherals list to dict on iOS to avoid ghost peripherals (#1039, #1035, #1026)
+- Restore test app functionality and slightly bulk out tests (#962)
+- Update build badges
+
+## 1.7.8
+
+- iOS: Properly convert peripheral UUID for isConnected (#1033)
+
+## 1.7.7
+
+- iOS: Fix support for 16 & 32-bit UUIDs on iOS (#1031, #1032)
+
+## 1.7.6
+
+- Update ble.js to use require format to improve loading reliability (#1030, #1029) thanks @sithwarrior
+
 ## 1.7.5
 
 - iOS: Improve input validation of UUIDs on iOS to avoid crashes (#1014, #905)
