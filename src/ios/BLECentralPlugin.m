@@ -689,11 +689,18 @@
     [peripherals addObject:peripheral];
     [peripheral setAdvertisementData:advertisementData RSSI:RSSI];
 
-    uint64_t nstate;
+    /*
+     Hladik 20230405: nalez propustime do JS jen pri rozsvicenem displeji.
+     nstate MUSI byt inicializovana a result MUSI byt zkontrolovan - jde o neverejny klic,
+     ktery Apple muze kdykoliv prejmenovat nebo omezit. Pri selhani cteni se chovame jako
+     "displej sviti" (fail-open), aby to nezpusobilo trvale zablokovani vsech nalezu.
+     */
+    uint64_t nstate = 0;
     int result = notify_get_state(nToken, &nstate);
-    NSLog(@"BT Scr state [ %llu - %x - %d - %x ] ",  nstate, (nstate==0),  nToken ,(result == NOTIFY_STATUS_OK) );
-        
-    if (discoverPeripheralCallbackId && nstate==0 ) {
+    BOOL screenIsOn = (result != NOTIFY_STATUS_OK) || (nstate == 0);
+    NSLog(@"BT Scr state [ %llu - %x - %d - %x ] ",  nstate, screenIsOn,  nToken ,(result == NOTIFY_STATUS_OK) );
+
+    if (discoverPeripheralCallbackId && screenIsOn ) {
         
         CDVPluginResult *pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];

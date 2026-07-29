@@ -45,25 +45,40 @@ import static android.bluetooth.BluetoothDevice.DEVICE_TYPE_LE;
 import static android.bluetooth.BluetoothDevice.ACTION_BOND_STATE_CHANGED;
 import static android.bluetooth.BluetoothDevice.EXTRA_BOND_STATE;
 
+/*
+ * Prijima vysledky BLE scanu spusteneho pres PendingIntent (backgroundScanMode).
+ * Diky tomu OS probudi proces az kdyz je v dosahu zarizeni odpovidajici ScanFilteru,
+ * misto aby aplikace musela drzet scan sama.
+ *
+ * Omezeni: pokud byl proces zabity, receiver ho sice nastartuje, ale JS vrstva (a tim i
+ * handshake) v tu chvili nezije - vysledek se pak jen zaloguje. Pokrytym scenarem je
+ * "proces zije, aplikace je na pozadi / telefon zamceny".
+ */
 public class AktionBroadcastReceiver extends BroadcastReceiver {
-    // key is the MAC Address
-    Map<String, Peripheral> peripherals = new LinkedHashMap<String, Peripheral>();
     private static final String TAG = "AktionBR";
 
     @Override
     public void onReceive(Context context, Intent intent) {
         int bleCallbackType = intent.getIntExtra(BluetoothLeScanner.EXTRA_CALLBACK_TYPE, -1);
-        if (bleCallbackType != -1) {
-            LOG.d(TAG, "Passive background scan callback type: "+bleCallbackType);
-            ArrayList<ScanResult> scanResults = intent.getParcelableArrayListExtra(
-                                            BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT);
-        // Do something with your ScanResult list here.
-        // These contain the data of your matching BLE advertising packets
-        /*
-                    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
-                    pluginResult.setKeepCallback(true);
-                    context.sendPluginResult(pluginResult);
-                    */
+        if (bleCallbackType == -1) {
+            return;
+        }
+        ArrayList<ScanResult> scanResults = intent.getParcelableArrayListExtra(
+                                        BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT);
+        if (scanResults == null || scanResults.isEmpty()) {
+            LOG.d(TAG, "Passive background scan without results, callback type: " + bleCallbackType);
+            return;
+        }
+
+        BLECentralPlugin plugin = BLECentralPlugin.getInstance();
+        if (plugin == null) {
+            LOG.d(TAG, "Passive background scan: plugin instance is gone, " + scanResults.size() + " result(s) dropped");
+            return;
+        }
+
+        LOG.d(TAG, "Passive background scan callback type: " + bleCallbackType + ", results: " + scanResults.size());
+        for (ScanResult result : scanResults) {
+            plugin.handleBackgroundScanResult(result);
         }
     }
 }

@@ -52,6 +52,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 
+import java.lang.ref.WeakReference;
 import java.util.*;
 
 import static android.bluetooth.BluetoothDevice.DEVICE_TYPE_DUAL;
@@ -167,12 +168,37 @@ public class BLECentralPlugin extends CordovaPlugin {
     CallbackContext locationStateCallback;
     BroadcastReceiver locationStateReceiver;
 
+    /*
+     * Scan spusteny pres PendingIntent (backgroundScanMode) doruci vysledky do
+     * AktionBroadcastReceiver, ktery zadny CallbackContext nema. Drzime proto slabou
+     * referenci na zivou instanci pluginu, aby jeji discoverCallback slo pouzit i odtud.
+     * Slaba zamerne - receiver muze bezet i po zniceni Activity a nesmi drzet plugin nazivu.
+     */
+    private static WeakReference<BLECentralPlugin> instance = new WeakReference<>(null);
+
+    static BLECentralPlugin getInstance() {
+        return instance.get();
+    }
+
     @Override
     protected void pluginInitialize() {
+        instance = new WeakReference<>(this);
         if (COMPILE_SDK_VERSION == -1) {
             Context context = cordova.getContext();
             COMPILE_SDK_VERSION = context.getApplicationContext().getApplicationInfo().targetSdkVersion;
         }
+    }
+
+    /*
+     * Vstupni bod pro AktionBroadcastReceiver. Prochazi stejnou cestou jako leScanCallback,
+     * aby JS strana nepoznala rozdil mezi normalnim a background scanem.
+     */
+    @SuppressLint("MissingPermission")
+    void handleBackgroundScanResult(ScanResult result) {
+        if (result == null || result.getScanRecord() == null) {
+            return;
+        }
+        leScanCallback.onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, result);
     }
 
     @SuppressLint("MissingPermission")
@@ -530,7 +556,12 @@ public class BLECentralPlugin extends CordovaPlugin {
                     
                 if (backgroundScanMode) {
                     scanSettings.setScanMode( ScanSettings.SCAN_MODE_LOW_POWER );
-                    scanSettings.setLegacy( false );
+                    /*
+                     * setLegacy(false) tu bylo natvrdo, coz reportuje POUZE extended
+                     * advertising - snimace inzerujici legacy by se na pozadi vubec
+                     * nenasly. Necháváme default (legacy=true); kdo chce extended-only,
+                     * posle si "legacy":false ve scan options jako u normalniho scanu.
+                     */
                 }
 
                 int scanDuration = options.optInt("duration", -1);
@@ -1307,12 +1338,13 @@ public class BLECentralPlugin extends CordovaPlugin {
         
         if ( backgroundScanMode ) {
             LOG.d(TAG, "Starting Scan in background mode");
-            
-            Intent intent = new Intent( cordova.getContext() , AktionBroadcastReceiver.class);
-            intent.putExtra("o-scan", true);
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(cordova.getContext(), 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
-            bluetoothLeScanner.startScan(filters, scanSettings, pendingIntent);
-
+            if (filters.isEmpty()) {
+                //scan pres PendingIntent bez filtru systém na vypnutem displeji zastavi
+                LOG.w(TAG, "Background scan without filters is unreliable, falling back to callback scan");
+                bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
+            } else {
+                bluetoothLeScanner.startScan(filters, scanSettings, backgroundScanPendingIntent());
+            }
         } else {
             LOG.d(TAG, "Starting Scan");
             bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
@@ -1327,6 +1359,21 @@ public class BLECentralPlugin extends CordovaPlugin {
         callbackContext.sendPluginResult(result);
     }
 
+    /*
+     * Scan spusteny pres PendingIntent doplnuje systém do intentu vysledky, takze intent
+     * MUSI byt mutable. Bez explicitniho flagu navic PendingIntent.getBroadcast() od
+     * Androidu 12 (S) vyhodi IllegalArgumentException.
+     */
+    private PendingIntent backgroundScanPendingIntent() {
+        Intent intent = new Intent(cordova.getContext(), AktionBroadcastReceiver.class);
+        intent.putExtra("o-scan", true);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags |= PendingIntent.FLAG_MUTABLE;
+        }
+        return PendingIntent.getBroadcast(cordova.getContext(), 0, intent, flags);
+    }
+
     @SuppressLint("MissingPermission")
     private void stopScan() {
         stopScanHandler.removeCallbacks(stopScanRunnable);
@@ -1334,8 +1381,11 @@ public class BLECentralPlugin extends CordovaPlugin {
             LOG.d(TAG, "Stopping Scan");
             try {
                 final BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-                if (bluetoothLeScanner != null)
+                if (bluetoothLeScanner != null) {
                     bluetoothLeScanner.stopScan(leScanCallback);
+                    //stopScan(leScanCallback) scan registrovany pres PendingIntent nezrusi
+                    bluetoothLeScanner.stopScan(backgroundScanPendingIntent());
+                }
             } catch (Exception e) {
                 LOG.e(TAG, "Exception stopping scan", e);
             }

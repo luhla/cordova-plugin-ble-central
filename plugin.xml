@@ -74,6 +74,13 @@
             <preference name="accessBackgroundLocation" value="$ACCESS_BACKGROUND_LOCATION"/>
         </config-file>
 
+        <!-- prijemce vysledku BLE scanu spusteneho pres PendingIntent (backgroundScanMode);
+             bez deklarace v manifestu by broadcast nemel kam dojit -->
+        <config-file target="AndroidManifest.xml" parent="/manifest/application">
+            <receiver android:name="com.megster.cordova.ble.central.AktionBroadcastReceiver"
+                android:exported="false"/>
+        </config-file>
+
         <hook type="after_prepare" src="hooks/after_prepare.js"/>
 
         <source-file src="src/android/BLECentralPlugin.java" target-dir="src/com/megster/cordova/ble/central"/>
