@@ -63,6 +63,8 @@
 - (void)stopNotification:(CDVInvokedUrlCommand *)command;
 
 - (void)isEnabled:(CDVInvokedUrlCommand *)command;
+- (void)startKeepAlive:(CDVInvokedUrlCommand *)command;
+- (void)stopKeepAlive:(CDVInvokedUrlCommand *)command;
 - (void)isConnected:(CDVInvokedUrlCommand *)command;
 
 - (void)startStateNotifications:(CDVInvokedUrlCommand *)command;

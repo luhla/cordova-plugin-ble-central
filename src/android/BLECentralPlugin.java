@@ -118,11 +118,17 @@ public class BLECentralPlugin extends CordovaPlugin {
     private static final String START_LOCATION_STATE_NOTIFICATIONS = "startLocationStateNotifications";
     private static final String STOP_LOCATION_STATE_NOTIFICATIONS = "stopLocationStateNotifications";
 
+    // EFG: foreground service drzici proces na pozadi (docs/navrh-foreground-service.md)
+    private static final String START_KEEP_ALIVE = "startKeepAlive";
+    private static final String STOP_KEEP_ALIVE = "stopKeepAlive";
+
     // callbacks
     CallbackContext discoverCallback;
     private CallbackContext enableBluetoothCallback;
 
     private static final String TAG = "BLEPlugin";
+    // Android 12+: foreground service lze spustit jen z popredi - sledujeme stav aktivity
+    private boolean activityResumed = true;
     private static final int REQUEST_ENABLE_BLUETOOTH = 1;
 
     BluetoothAdapter bluetoothAdapter;
@@ -191,6 +197,44 @@ public class BLECentralPlugin extends CordovaPlugin {
         }
     }
 
+    @Override
+    public void onPause(boolean multitasking) {
+        activityResumed = false;
+    }
+
+    @Override
+    public void onResume(boolean multitasking) {
+        activityResumed = true;
+    }
+
+    /*
+     * Spusti (nebo aktualizuje text) foreground service AktionKeepAliveService.
+     * Podminky systemu: typ connectedDevice vyzaduje udelene BLUETOOTH_CONNECT nebo BLUETOOTH_SCAN
+     * (API 31+), start FGS je povoleny jen z popredi (API 31+). Pri nesplneni vraci ERROR a JS
+     * to zkusi znovu pri dalsim navratu do popredi (setActiveMode).
+     */
+    private void startKeepAlive(CordovaArgs args, CallbackContext callbackContext) throws JSONException {
+        String title = args.isNull(0) ? "" : args.getString(0);
+        String text = args.isNull(1) ? "" : args.getString(1);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && !PermissionHelper.hasPermission(this, BLUETOOTH_CONNECT)
+                && !PermissionHelper.hasPermission(this, BLUETOOTH_SCAN)) {
+            callbackContext.error("keepAlive: missing BLUETOOTH_CONNECT/BLUETOOTH_SCAN permission");
+            return;
+        }
+        if (!activityResumed && !AktionKeepAliveService.isRunning()) {
+            callbackContext.error("keepAlive: activity not in foreground");
+            return;
+        }
+        try {
+            AktionKeepAliveService.start(cordova.getContext(), title, text);
+            callbackContext.success(AktionKeepAliveService.isRunning() ? "updated" : "started");
+        } catch (Exception e) {
+            LOG.e(TAG, "startKeepAlive failed: " + e);
+            callbackContext.error("keepAlive: " + e.getMessage());
+        }
+    }
+
     /*
      * Vstupni bod pro AktionBroadcastReceiver. Prochazi stejnou cestou jako leScanCallback,
      * aby JS strana nepoznala rozdil mezi normalnim a background scanem.
@@ -210,6 +254,8 @@ public class BLECentralPlugin extends CordovaPlugin {
         removeLocationStateListener();
         removeBondStateListener();
         stopAllScans("onDestroy");
+        // zanik WebView = konec JS, sluzba by drzela mrtvy proces
+        AktionKeepAliveService.stop(cordova.getContext());
         for(Peripheral peripheral : peripherals.values()) {
             peripheral.disconnect();
         }
@@ -262,7 +308,16 @@ public class BLECentralPlugin extends CordovaPlugin {
         }
 
         boolean validAction = true;
-        if (action.equals(STOP_SCAN)) {
+        if (action.equals(START_KEEP_ALIVE)) {
+
+            startKeepAlive(args, callbackContext);
+
+        } else if (action.equals(STOP_KEEP_ALIVE)) {
+
+            AktionKeepAliveService.stop(cordova.getContext());
+            callbackContext.success();
+
+        } else if (action.equals(STOP_SCAN)) {
             stopScan();
             callbackContext.success();
 

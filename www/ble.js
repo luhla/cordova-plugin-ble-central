@@ -228,6 +228,16 @@ module.exports = {
         exec(success, failure, 'BLE', 'isConnected', [device_id]);
     },
 
+    // EFG/Android: foreground service drzici proces po dobu automatickeho modu (iOS: no-op).
+    // title/text = obsah trvale notifikace; opakovane volani jen prepise text.
+    startKeepAlive: function (title, text, success, failure) {
+        exec(success, failure, 'BLE', 'startKeepAlive', [title, text]);
+    },
+
+    stopKeepAlive: function (success, failure) {
+        exec(success, failure, 'BLE', 'stopKeepAlive', []);
+    },
+
     isEnabled: function (success, failure) {
         exec(success, failure, 'BLE', 'isEnabled', []);
     },

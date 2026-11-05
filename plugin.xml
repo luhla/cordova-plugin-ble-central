@@ -68,6 +68,9 @@
             <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
             <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
             <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+            <!-- EFG: foreground service (AktionKeepAliveService) po dobu automatickeho modu -->
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
         </config-file>
 
         <config-file target="res/xml/config.xml" parent="/*">
@@ -79,6 +82,10 @@
         <config-file target="AndroidManifest.xml" parent="/manifest/application">
             <receiver android:name="com.megster.cordova.ble.central.AktionBroadcastReceiver"
                 android:exported="false"/>
+            <!-- foreground service drzici proces na pozadi (typ connectedDevice = BLE komunikace se snimaci) -->
+            <service android:name="com.megster.cordova.ble.central.AktionKeepAliveService"
+                android:exported="false"
+                android:foregroundServiceType="connectedDevice"/>
         </config-file>
 
         <hook type="after_prepare" src="hooks/after_prepare.js"/>
@@ -91,6 +98,8 @@
         <source-file src="src/android/UUIDHelper.java" target-dir="src/com/megster/cordova/ble/central"/>
         <source-file src="src/android/L2CAPContext.java" target-dir="src/com/megster/cordova/ble/central"/>
         <source-file src="src/android/AktionBroadcastReceiver.java" target-dir="src/com/megster/cordova/ble/central"/>
+        <source-file src="src/android/AktionKeepAliveService.java" target-dir="src/com/megster/cordova/ble/central"/>
+        <resource-file src="src/android/res/drawable/aktion_keepalive.xml" target="res/drawable/aktion_keepalive.xml"/>
         
         <framework src="androidx.annotation:annotation:*"/>
     </platform>
