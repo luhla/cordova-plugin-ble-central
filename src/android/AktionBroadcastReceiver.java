@@ -50,8 +50,9 @@ import static android.bluetooth.BluetoothDevice.EXTRA_BOND_STATE;
  * Diky tomu OS probudi proces az kdyz je v dosahu zarizeni odpovidajici ScanFilteru,
  * misto aby aplikace musela drzet scan sama.
  *
- * Omezeni: pokud byl proces zabity, receiver ho sice nastartuje, ale JS vrstva (a tim i
- * handshake) v tu chvili nezije - vysledek se pak jen zaloguje. Pokrytym scenarem je
+ * Pokud byl proces zabity, receiver ho sice nastartuje, ale JS vrstva (a tim i handshake)
+ * v tu chvili nezije - v takovem pripade se scan rovnou zrusi (viz onReceive), jinak by
+ * bezel jako "zombie" do vypnuti Bluetooth. Pokrytym scenarem je
  * "proces zije, aplikace je na pozadi / telefon zamceny".
  */
 public class AktionBroadcastReceiver extends BroadcastReceiver {
@@ -72,7 +73,13 @@ public class AktionBroadcastReceiver extends BroadcastReceiver {
 
         BLECentralPlugin plugin = BLECentralPlugin.getInstance();
         if (plugin == null) {
-            LOG.d(TAG, "Passive background scan: plugin instance is gone, " + scanResults.size() + " result(s) dropped");
+            /*
+             * Proces byl zabit (uzivatel, system) a tento broadcast ho znovu nastartoval.
+             * Cordova ani JS nezije, vysledky nema kdo zpracovat a scan by jinak bezel
+             * do vypnuti Bluetooth - kazdy inzerat snimace by proces znovu probudil.
+             */
+            LOG.d(TAG, "Passive background scan: plugin instance is gone, " + scanResults.size() + " result(s) dropped, cancelling scan");
+            BLECentralPlugin.cancelBackgroundScan(context.getApplicationContext(), "process revived without plugin");
             return;
         }
 

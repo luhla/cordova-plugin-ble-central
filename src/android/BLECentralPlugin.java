@@ -183,6 +183,8 @@ public class BLECentralPlugin extends CordovaPlugin {
     @Override
     protected void pluginInitialize() {
         instance = new WeakReference<>(this);
+        //uklid po predchozim behu / starsi verzi: PendingIntent scan mohl prezit zabiti procesu
+        cancelBackgroundScan(cordova.getContext(), "pluginInitialize");
         if (COMPILE_SDK_VERSION == -1) {
             Context context = cordova.getContext();
             COMPILE_SDK_VERSION = context.getApplicationContext().getApplicationInfo().targetSdkVersion;
@@ -207,6 +209,7 @@ public class BLECentralPlugin extends CordovaPlugin {
         removeStateListener();
         removeLocationStateListener();
         removeBondStateListener();
+        stopAllScans("onDestroy");
         for(Peripheral peripheral : peripherals.values()) {
             peripheral.disconnect();
         }
@@ -218,9 +221,25 @@ public class BLECentralPlugin extends CordovaPlugin {
         removeStateListener();
         removeLocationStateListener();
         removeBondStateListener();
+        stopAllScans("onReset");
         for(Peripheral peripheral : peripherals.values()) {
             peripheral.disconnect();
         }
+    }
+
+    /*
+     * Zivot scanu je vazany na zivot WebView: po zniceni Activity uz neni, kdo by ho
+     * zastavil (JS nezije), proto se zastavi tady - callbackovy i PendingIntent.
+     */
+    private void stopAllScans(String reason) {
+        try {
+            if (bluetoothAdapter != null) {
+                stopScan();
+            }
+        } catch (Exception e) {
+            LOG.w(TAG, "stopScan in " + reason + " failed: " + e.getMessage());
+        }
+        cancelBackgroundScan(cordova.getContext(), reason);
     }
 
     @Override
@@ -1343,7 +1362,7 @@ public class BLECentralPlugin extends CordovaPlugin {
                 LOG.w(TAG, "Background scan without filters is unreliable, falling back to callback scan");
                 bluetoothLeScanner.startScan(filters, scanSettings, leScanCallback);
             } else {
-                bluetoothLeScanner.startScan(filters, scanSettings, backgroundScanPendingIntent());
+                bluetoothLeScanner.startScan(filters, scanSettings, backgroundScanPendingIntent(cordova.getContext()));
             }
         } else {
             LOG.d(TAG, "Starting Scan");
@@ -1363,15 +1382,45 @@ public class BLECentralPlugin extends CordovaPlugin {
      * Scan spusteny pres PendingIntent doplnuje systém do intentu vysledky, takze intent
      * MUSI byt mutable. Bez explicitniho flagu navic PendingIntent.getBroadcast() od
      * Androidu 12 (S) vyhodi IllegalArgumentException.
+     * Staticke, aby sel stejny PendingIntent sestavit i bez zive instance pluginu
+     * (viz cancelBackgroundScan).
      */
-    private PendingIntent backgroundScanPendingIntent() {
-        Intent intent = new Intent(cordova.getContext(), AktionBroadcastReceiver.class);
+    static PendingIntent backgroundScanPendingIntent(Context context) {
+        Intent intent = new Intent(context, AktionBroadcastReceiver.class);
         intent.putExtra("o-scan", true);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             flags |= PendingIntent.FLAG_MUTABLE;
         }
-        return PendingIntent.getBroadcast(cordova.getContext(), 0, intent, flags);
+        return PendingIntent.getBroadcast(context, 0, intent, flags);
+    }
+
+    /*
+     * Zrusi scan registrovany pres PendingIntent nezavisle na stavu pluginu / Cordovy.
+     * PendingIntent scan vlastni system: prezije zabiti procesu i odstraneni aplikace
+     * z nedavnych a kazdy vysledek proces znovu nastartuje ("Start proc ... for broadcast").
+     * Bez tohoto uklidu bezel scan do vypnuti Bluetooth nebo restartu telefonu
+     * (zmereno 2026-11-05 na Galaxy S22 / Android 16, viz docs/analyza-spotreba-faze1.md, B9).
+     * Vola se (a) z AktionBroadcastReceiver, kdyz proces oziva bez pluginu,
+     * (b) z onDestroy/onReset, (c) z pluginInitialize jako uklid po starsi verzi aplikace.
+     */
+    @SuppressLint("MissingPermission")
+    static void cancelBackgroundScan(Context context, String reason) {
+        try {
+            BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+            BluetoothAdapter adapter = bluetoothManager != null ? bluetoothManager.getAdapter() : null;
+            if (adapter == null || adapter.getState() != BluetoothAdapter.STATE_ON) {
+                return;
+            }
+            BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
+            if (scanner == null) {
+                return;
+            }
+            scanner.stopScan(backgroundScanPendingIntent(context));
+            LOG.d(TAG, "Background (PendingIntent) scan cancelled: " + reason);
+        } catch (Exception e) {
+            LOG.w(TAG, "Unable to cancel background scan (" + reason + "): " + e.getMessage());
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -1384,7 +1433,7 @@ public class BLECentralPlugin extends CordovaPlugin {
                 if (bluetoothLeScanner != null) {
                     bluetoothLeScanner.stopScan(leScanCallback);
                     //stopScan(leScanCallback) scan registrovany pres PendingIntent nezrusi
-                    bluetoothLeScanner.stopScan(backgroundScanPendingIntent());
+                    bluetoothLeScanner.stopScan(backgroundScanPendingIntent(cordova.getContext()));
                 }
             } catch (Exception e) {
                 LOG.e(TAG, "Exception stopping scan", e);
